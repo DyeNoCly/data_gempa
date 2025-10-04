@@ -1,0 +1,305 @@
+import React, { useState, useEffect } from 'react';
+import { BarChart, Bar, LineChart, Line, ScatterChart, Scatter, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { AlertCircle, TrendingUp, MapPin, Activity } from 'lucide-react';
+import Papa from 'papaparse';
+
+const GempaDashboard = () => {
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState({});
+  const [filter, setFilter] = useState('all');
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const response = await fetch('https://raw.githubusercontent.com/DyeNoCly/data_gempa/refs/heads/main/katalog_gempa.csv');
+        const text = await response.text();
+        
+        Papa.parse(text, {
+          header: true,
+          dynamicTyping: true,
+          skipEmptyLines: true,
+          complete: (results) => {
+            const processedData = results.data.map(row => ({
+              ...row,
+              mag: parseFloat(row.mag) || 0,
+              depth: parseFloat(row.depth) || 0,
+              year: row.tgl ? parseInt(row.tgl.split('/')[0]) : null,
+              month: row.tgl ? parseInt(row.tgl.split('/')[1]) : null
+            })).filter(row => row.mag > 0 && row.year);
+            
+            setData(processedData);
+            calculateStats(processedData);
+            setLoading(false);
+          }
+        });
+      } catch (error) {
+        console.error('Error loading data:', error);
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  const calculateStats = (rawData) => {
+    const total = rawData.length;
+    const avgMag = (rawData.reduce((sum, d) => sum + d.mag, 0) / total).toFixed(2);
+    const maxMag = Math.max(...rawData.map(d => d.mag));
+    const avgDepth = (rawData.reduce((sum, d) => sum + d.depth, 0) / total).toFixed(0);
+    
+    const magCategories = {
+      'Minor (< 4.0)': rawData.filter(d => d.mag < 4.0).length,
+      'Light (4.0-4.9)': rawData.filter(d => d.mag >= 4.0 && d.mag < 5.0).length,
+      'Moderate (5.0-5.9)': rawData.filter(d => d.mag >= 5.0 && d.mag < 6.0).length,
+      'Strong (6.0-6.9)': rawData.filter(d => d.mag >= 6.0 && d.mag < 7.0).length,
+      'Major (≥ 7.0)': rawData.filter(d => d.mag >= 7.0).length
+    };
+
+    setStats({ total, avgMag, maxMag, avgDepth, magCategories });
+  };
+
+  const getFilteredData = () => {
+    if (filter === 'all') return data;
+    if (filter === 'shallow') return data.filter(d => d.depth < 70);
+    if (filter === 'intermediate') return data.filter(d => d.depth >= 70 && d.depth < 300);
+    if (filter === 'deep') return data.filter(d => d.depth >= 300);
+    return data;
+  };
+
+  const getMagnitudeDistribution = () => {
+    if (!stats.magCategories) return [];
+    return Object.entries(stats.magCategories).map(([name, value]) => ({
+      name,
+      value
+    }));
+  };
+
+  const getYearlyTrend = () => {
+    const filtered = getFilteredData();
+    const yearlyCount = {};
+    filtered.forEach(d => {
+      if (d.year) {
+        yearlyCount[d.year] = (yearlyCount[d.year] || 0) + 1;
+      }
+    });
+    return Object.entries(yearlyCount)
+      .map(([year, count]) => ({ year: parseInt(year), count }))
+      .sort((a, b) => a.year - b.year);
+  };
+
+  const getTopLocations = () => {
+    const filtered = getFilteredData();
+    const locationCount = {};
+    filtered.forEach(d => {
+      if (d.remark) {
+        const location = d.remark.trim();
+        locationCount[location] = (locationCount[location] || 0) + 1;
+      }
+    });
+    return Object.entries(locationCount)
+      .map(([location, count]) => ({ location, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+  };
+
+  const getMagnitudeDepthData = () => {
+    return getFilteredData()
+      .filter(d => d.mag > 0 && d.depth > 0)
+      .slice(0, 500)
+      .map(d => ({
+        magnitude: d.mag,
+        depth: d.depth
+      }));
+  };
+
+  const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-gradient-to-br from-slate-900 to-slate-800">
+        <div className="text-white text-2xl">Memuat data gempa...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 p-6">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="text-center mb-8">
+          <h1 className="text-4xl font-bold text-white mb-2 flex items-center justify-center gap-3">
+            <Activity className="text-red-500" size={40} />
+            Analisis Katalog Gempa Indonesia
+          </h1>
+          <p className="text-slate-300">Data Gempa Bumi 2008-2009</p>
+        </div>
+
+        {/* Filter */}
+        <div className="mb-6 flex gap-3 justify-center">
+          <button
+            onClick={() => setFilter('all')}
+            className={`px-4 py-2 rounded-lg font-medium transition ${
+              filter === 'all'
+                ? 'bg-blue-500 text-white'
+                : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+            }`}
+          >
+            Semua
+          </button>
+          <button
+            onClick={() => setFilter('shallow')}
+            className={`px-4 py-2 rounded-lg font-medium transition ${
+              filter === 'shallow'
+                ? 'bg-blue-500 text-white'
+                : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+            }`}
+          >
+            Dangkal (&lt; 70km)
+          </button>
+          <button
+            onClick={() => setFilter('intermediate')}
+            className={`px-4 py-2 rounded-lg font-medium transition ${
+              filter === 'intermediate'
+                ? 'bg-blue-500 text-white'
+                : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+            }`}
+          >
+            Menengah (70-300km)
+          </button>
+          <button
+            onClick={() => setFilter('deep')}
+            className={`px-4 py-2 rounded-lg font-medium transition ${
+              filter === 'deep'
+                ? 'bg-blue-500 text-white'
+                : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+            }`}
+          >
+            Dalam (&gt; 300km)
+          </button>
+        </div>
+
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+          <div className="bg-gradient-to-br from-blue-600 to-blue-700 rounded-xl p-6 text-white shadow-lg">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium opacity-90">Total Gempa</h3>
+              <AlertCircle size={24} />
+            </div>
+            <p className="text-3xl font-bold">{getFilteredData().length.toLocaleString()}</p>
+          </div>
+
+          <div className="bg-gradient-to-br from-green-600 to-green-700 rounded-xl p-6 text-white shadow-lg">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium opacity-90">Magnitudo Rata-rata</h3>
+              <TrendingUp size={24} />
+            </div>
+            <p className="text-3xl font-bold">{stats.avgMag} SR</p>
+          </div>
+
+          <div className="bg-gradient-to-br from-orange-600 to-orange-700 rounded-xl p-6 text-white shadow-lg">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium opacity-90">Magnitudo Maksimal</h3>
+              <AlertCircle size={24} className="text-red-200" />
+            </div>
+            <p className="text-3xl font-bold">{stats.maxMag} SR</p>
+          </div>
+
+          <div className="bg-gradient-to-br from-purple-600 to-purple-700 rounded-xl p-6 text-white shadow-lg">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium opacity-90">Kedalaman Rata-rata</h3>
+              <MapPin size={24} />
+            </div>
+            <p className="text-3xl font-bold">{stats.avgDepth} km</p>
+          </div>
+        </div>
+
+        {/* Charts Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Yearly Trend */}
+          <div className="bg-slate-800 rounded-xl p-6 shadow-lg">
+            <h3 className="text-xl font-bold text-white mb-4">Tren Gempa per Tahun</h3>
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={getYearlyTrend()}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                <XAxis dataKey="year" stroke="#9ca3af" />
+                <YAxis stroke="#9ca3af" />
+                <Tooltip
+                  contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px' }}
+                  labelStyle={{ color: '#fff' }}
+                />
+                <Line type="monotone" dataKey="count" stroke="#3b82f6" strokeWidth={3} dot={{ fill: '#3b82f6', r: 4 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Magnitude Distribution */}
+          <div className="bg-slate-800 rounded-xl p-6 shadow-lg">
+            <h3 className="text-xl font-bold text-white mb-4">Distribusi Magnitudo</h3>
+            <ResponsiveContainer width="100%" height={300}>
+              <PieChart>
+                <Pie
+                  data={getMagnitudeDistribution()}
+                  cx="50%"
+                  cy="50%"
+                  labelLine={false}
+                  label={(entry) => `${entry.name.split(' ')[0]}: ${entry.value}`}
+                  outerRadius={100}
+                  fill="#8884d8"
+                  dataKey="value"
+                >
+                  {getMagnitudeDistribution().map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px' }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Top Locations */}
+          <div className="bg-slate-800 rounded-xl p-6 shadow-lg">
+            <h3 className="text-xl font-bold text-white mb-4">10 Lokasi Terbanyak</h3>
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={getTopLocations()} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                <XAxis type="number" stroke="#9ca3af" />
+                <YAxis dataKey="location" type="category" width={150} stroke="#9ca3af" style={{ fontSize: '11px' }} />
+                <Tooltip
+                  contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px' }}
+                />
+                <Bar dataKey="count" fill="#10b981" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Magnitude vs Depth */}
+          <div className="bg-slate-800 rounded-xl p-6 shadow-lg">
+            <h3 className="text-xl font-bold text-white mb-4">Magnitudo vs Kedalaman</h3>
+            <ResponsiveContainer width="100%" height={300}>
+              <ScatterChart>
+                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                <XAxis dataKey="magnitude" name="Magnitudo" stroke="#9ca3af" />
+                <YAxis dataKey="depth" name="Kedalaman (km)" stroke="#9ca3af" />
+                <Tooltip
+                  cursor={{ strokeDasharray: '3 3' }}
+                  contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px' }}
+                />
+                <Scatter data={getMagnitudeDepthData()} fill="#f59e0b" />
+              </ScatterChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="mt-8 text-center text-slate-400 text-sm">
+          <p>Data: {stats.total?.toLocaleString()} kejadian gempa | Periode: 2008-2009</p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default GempaDashboard;
